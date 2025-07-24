@@ -1,84 +1,93 @@
-# news_bot.py - Наш автоматизированный AI-новостной бот
+# news_bot.py (Версия 2.0 - на RSS-каналах)
 
 import os
 import requests
 import google.generativeai as genai
+import feedparser # Новая библиотека для работы с RSS
 import time
+from html import unescape # Для очистки HTML-тегов из описаний
 
-# --- 1. Функция для получения новостей из Mediastack ---
-def get_news(api_key):
-    print("Этап 1: Получение новостей из Mediastack...")
-    params = {
-        'access_key': api_key,
-        'categories': 'technology',
-        'languages': 'en',
-        'sort': 'published_desc',
-        'limit': 30  # Возьмем чуть больше, чтобы было из чего фильтровать
-    }
-    API_URL = 'http://api.mediastack.com/v1/news'
-    response = requests.get(API_URL, params=params)
+# --- 1. Функция для сбора новостей из списка RSS-каналов ---
+def get_news_from_rss(rss_urls):
+    print("Этап 1: Получение новостей из RSS-каналов...")
+    articles = []
+    seen_titles = set() # Множество для отслеживания дубликатов заголовков
 
-    if response.status_code == 200:
-        articles = response.json().get('data', [])
-        print(f"Найдено {len(articles)} новостей для анализа.")
-        return articles
-    else:
-        print(f"Ошибка Mediastack: {response.status_code}, {response.text}")
-        return None
+    for url in rss_urls:
+        try:
+            print(f"  -> Загружаю канал: {url}")
+            feed = feedparser.parse(url)
+            
+            for entry in feed.entries:
+                # Проверяем на дубликаты по заголовку
+                if entry.title not in seen_titles:
+                    # Очищаем описание от HTML-тегов, если они есть
+                    description = unescape(entry.summary) if 'summary' in entry else ''
+                    
+                    articles.append({
+                        'title': entry.title,
+                        'description': description,
+                        'url': entry.link,
+                        'source': feed.feed.title # Используем название самого канала как источник
+                    })
+                    seen_titles.add(entry.title)
+        except Exception as e:
+            print(f"    !! Ошибка при обработке канала {url}: {e}")
 
-# --- 2. Функция для анализа и суммаризации с помощью Gemini ---
+    print(f"Собрано уникальных новостей для анализа: {len(articles)}")
+    return articles
+
+# --- Функции summarize_with_gemini и send_to_telegram остаются без изменений ---
+
+# --- 2. Функция для анализа и суммаризации с помощью Gemini (без изменений) ---
 def summarize_with_gemini(articles, api_key):
     print("\nЭтап 2: Фильтрация и суммаризация с помощью Gemini...")
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
     summarized_articles = []
+    # Так как мы уже отобрали источники, можно немного ослабить промпт Gemini
+    # и просто просить его делать саммари.
     for article in articles:
         title = article.get('title')
-        description = article.get('description')
+        description = article.get('description', '')
         url = article.get('url')
         source = article.get('source')
 
-        if not title or not description:
-            continue
-
+        # Теперь Gemini не нужно фильтровать, а только делать саммари
         prompt = f"""
-        Проанализируй следующий заголовок и описание новости.
+        Сделай краткую выжимку (саммари) на РУССКОМ языке в 1-2 предложениях для следующей новости.
+        Передай только главную суть.
+
         Заголовок: "{title}"
         Описание: "{description}"
-        Твои задачи:
-        1. Определи, относится ли эта новость к сфере искусственного интеллекта (AI, machine learning) ИЛИ к сфере телекоммуникаций (telecom, 5G, satellites).
-        2. Если новость НЕ относится к этим сферам, ответь одним словом: НЕРЕЛЕВАНТНО.
-        3. Если относится, сделай краткую выжимку (саммари) на РУССКОМ языке в 1-2 предложениях.
-        Твой ответ должен быть только саммари или словом "НЕРЕЛЕВАНТНО".
+
+        Твой ответ должен быть только текстом саммари.
         """
         try:
-            print(f"Анализирую: {title[:50]}...")
+            print(f"Анализирую: {title[:60]}...")
             response = model.generate_content(prompt)
             summary = response.text.strip()
 
-            if "НЕРЕЛЕВАНТНО" not in summary and summary:
-                print("  -> Релевантно. Добавляю в список.")
+            if summary: # Просто проверяем, что ответ не пустой
                 summarized_articles.append({
                     'title': title, 'summary_ru': summary,
                     'url': url, 'source': source
                 })
-            else:
-                print("  -> Нерелевантно.")
-
         except Exception as e:
             print(f"Ошибка Gemini API: {e}")
-        time.sleep(1) # Пауза между запросами к API
+        time.sleep(1)
 
-    print(f"Анализ завершен. Релевантных новостей: {len(summarized_articles)}")
+    print(f"Анализ завершен. Обработано новостей: {len(summarized_articles)}")
     return summarized_articles
 
-# --- 3. Функция для отправки сообщений в Telegram ---
+
+# --- 3. Функция для отправки сообщений в Telegram (без изменений) ---
 def send_to_telegram(articles, bot_token, channel_id):
     print("\nЭтап 3: Отправка новостей в Telegram...")
     total_sent = 0
-    for article in articles:
-        # Markdown V2 требует экранирования специальных символов
+    # Отправляем не больше 15 новостей, чтобы не спамить в канал
+    for article in articles[:15]:
         title = article['title'].replace('-', '\\-').replace('.', '\\.').replace('!', '\\!').replace('(', '\\(').replace(')', '\\)')
         summary = article['summary_ru'].replace('-', '\\-').replace('.', '\\.').replace('!', '\\!').replace('(', '\\(').replace(')', '\\)')
         source = str(article['source']).replace('-', '\\-').replace('.', '\\.').replace('!', '\\!').replace('(', '\\(').replace(')', '\\)')
@@ -92,12 +101,7 @@ def send_to_telegram(articles, bot_token, channel_id):
         )
 
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        params = {
-            'chat_id': channel_id,
-            'text': message_text,
-            'parse_mode': 'MarkdownV2',
-            'disable_web_page_preview': True
-        }
+        params = {'chat_id': channel_id, 'text': message_text, 'parse_mode': 'MarkdownV2', 'disable_web_page_preview': True}
         
         response = requests.post(url, data=params)
         if response.status_code == 200:
@@ -105,26 +109,50 @@ def send_to_telegram(articles, bot_token, channel_id):
             total_sent += 1
         else:
             print(f"  -> Ошибка отправки: {response.status_code}, {response.text}")
-        time.sleep(2) # Пауза между сообщениями
+        time.sleep(2)
 
     print(f"Отправка завершена. Всего отправлено: {total_sent}")
 
-
 # --- Основной блок для запуска ---
 if __name__ == "__main__":
-    print("Запуск AI-новостного бота...")
+    print("Запуск AI-новостного бота (v2.0 - RSS)...")
+
+    # !!! ВСТАВЬТЕ СЮДА ВАШ СПИСОК RSS-КАНАЛОВ !!!
+    RSS_FEEDS = [
+	"https://feeds.reuters.com/reuters/technologyNews"
+	"https://feeds.bloomberg.com/technology/news.rss"
+	"https://www.theverge.com/rss/index.xml"
+	"http://feeds.arstechnica.com/arstechnica/index/"
+	"https://www.technologyreview.com/topic/artificial-intelligence/feed/"
+	"https://www.kdnuggets.com/feed"
+	"https://www.analyticsinsight.net/feed/"
+	"https://www.rcrwireless.com/feed"
+	"http://feeds.feedburner.com/TeleGeographyBlog"
+	"http://feeds.google.com/googleaiblog/"
+	"https://openai.com/blog.rss"
+	"https://blogs.nvidia.com/blog/category/artificial-intelligence/feed/"
+	"https://a16z.com/feed/"
+        "https://techcrunch.com/category/artificial-intelligence/feed/",
+        "https://www.wired.com/feed/category/artificial-intelligence/latest/rss",
+        "https://feeds.feedburner.com/Venturebeat/AI",
+        "https://www.lightreading.com/rss_feed.asp",
+        "https://www.fiercetelecom.com/rss.xml",
+        # Добавьте сюда остальные найденные вами каналы
+    ]
     
-    # Получаем ключи из секретов окружения (так работает GitHub Actions)
-    MEDIASTACK_KEY = os.environ.get('MEDIASTACK_API_KEY')
     GEMINI_KEY = os.environ.get('GEMINI_API_KEY')
     TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
     TELEGRAM_CHANNEL = os.environ.get('TELEGRAM_CHANNEL_ID')
 
-    if not all([MEDIASTACK_KEY, GEMINI_KEY, TELEGRAM_TOKEN, TELEGRAM_CHANNEL]):
+    if not all([GEMINI_KEY, TELEGRAM_TOKEN, TELEGRAM_CHANNEL]):
         print("Ошибка: Один или несколько API-ключей не найдены в переменных окружения.")
     else:
-        raw_articles = get_news(MEDIASTACK_KEY)
+        raw_articles = get_news_from_rss(RSS_FEEDS)
         if raw_articles:
+            # Перемешиваем статьи, чтобы в топе были новости из разных источников
+            import random
+            random.shuffle(raw_articles)
+            
             summarized = summarize_with_gemini(raw_articles, GEMINI_KEY)
             if summarized:
                 send_to_telegram(summarized, TELEGRAM_TOKEN, TELEGRAM_CHANNEL)
