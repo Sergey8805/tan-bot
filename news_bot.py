@@ -74,7 +74,7 @@ def summarize_with_gemini(articles, api_key):
             print(f"Ошибка Gemini API: {e}")
         
         # УВЕЛИЧЕННАЯ ПАУЗА ДЛЯ СОБЛЮДЕНИЯ ЛИМИТОВ API
-        time.sleep(5)
+        time.sleep(10)
 
     print(f"Анализ завершен. Обработано новостей: {len(summarized_articles)}")
     return summarized_articles
