@@ -41,8 +41,8 @@ def summarize_with_gemini(articles, api_key):
     genai.configure(api_key=api_key)
     
     # ИСПОЛЬЗУЕМ КОРРЕКТНУЮ И АКТУАЛЬНУЮ МОДЕЛЬ
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-    print("Модель Gemini 'gemini-1.5-flash-latest' успешно настроена.")
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    print("Модель Gemini 'gemini-2.5-flash' успешно настроена.")
 
     summarized_articles = []
     for article in articles:
