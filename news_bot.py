@@ -84,7 +84,7 @@ def send_to_telegram(articles, bot_token, channel_id):
     print("\nЭтап 3: Отправка новостей в Telegram...")
     total_sent = 0
     
-    for article in articles[:15]: # Отправляем не больше 15 новостей
+    for article in articles[]: # Отправляем не больше 15 новостей
         # Экранирование специальных символов для MarkdownV2
         chars_to_escape = "_*[]()~`>#+-=|{}.!"
         title = article['title']
