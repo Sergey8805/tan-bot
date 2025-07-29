@@ -151,8 +151,8 @@ def summarize_and_prepare_messages(groups, all_articles, api_key):
         return [], set()
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    print("Модель Gemini 'gemini-1.5-flash' настроена для суммаризации.")
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    print("Модель Gemini 'gemini-2.5-flash' настроена для суммаризации.")
 
     prepared_messages = []
     processed_urls_in_batch = set()
